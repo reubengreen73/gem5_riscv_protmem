@@ -25,10 +25,8 @@ Protmem augments 64-bit RISCV by adding 3 new 64-bit registers and four new inst
 | Instruction name and arguments | Description |
 |--------------------------------|-------------|
 | setproti rs1 | Sets Protmem Instruction Pointer to the value in rs1. Only legal in Protmem unlock mode, triggers a fault if used in lock mode |
-| setprotd rs1,rs2 | Sets Protmem Data 1 to rs1, and the least significant 63 bits of Protmem Data 2 to the least significant 63 bits of
-rs2. Only legal in Protmem unlock mode, triggers a fault if used in lock mode|
-| enterprot rd | Stores the address of the next instruction in rd, enters Protmem unlock mode, and jumps to the address in Protmem Instruction
-Pointer |
+| setprotd rs1,rs2 | Sets Protmem Data 1 to rs1, and the least significant 63 bits of Protmem Data 2 to the least significant 63 bits of rs2. Only legal in Protmem unlock mode, triggers a fault if used in lock mode|
+| enterprot rd | Stores the address of the next instruction in rd, enters Protmem unlock mode, and jumps to the address in Protmem Instruction Pointer |
 | exitprot rs1 | enters Protmem lock mode (i.e. exits unlock mode) and jumps to the address in rs1 |
 
 
