@@ -94,7 +94,22 @@ from the root of this repository. Then, once you are at the prompt inside this c
 and run `./full-demo.sh`. This will run each of the scripts in the `component scripts` subdirectory in order: first the toolchain will be
 built, then gem5, and finally the demonstration program `workspace/demo-program/protmem-demo.c` will be compiled and run in gem5.
 
-HERE
+A run of `full-demo.sh` will end by running the demonstration program in gem5. The output from this should be as follows.
+```doing setup...
+   ...done
+beginning correct protmem use...
+   ...done
+nonsecret is 17 96 101 27
+beginning incorrect protmem use...```
+followed by a message from gem5 that a `protmem violation` occurred and a backtrace. For more information about what this demonstration
+program does, see the source file `workspace/demo-program/protmem-demo.c`.
+
+Once the initial full build has been done, you can experiment with Protmem by modifying the source file, then rebuild it and run it
+in gem5 by running the script `workspace/component-scripts/run-demo.sh`.
+
+Note that building and running this demonstration may take a long time. On the machine I am using (which is, admittedly, a rather old
+and low-powered laptop) a full run took 6 hours. The `workspace` directory needed 18GB of space, and the generated Docker image took up
+1.9GB.
 
 ## Limitations of Protmem
 As mentioned above, Protmem is not a fully worked out design, but rather just a demonstration of a concept. As such, the system implemented
@@ -106,6 +121,6 @@ mechanisms to protect text segments from being modified. In particular, many env
 be possible for Protmem to directly protect a section of memory beginning at the address in the Protmem Instruction Pointer, but I have not
 done this.
 
-Moreover, in a real processor it would be necessary to provide some mechanism to allow the processor to enter unlock mode *without jumping to
-the address in the Protmem Instruction Pointer* when operating in a higher privilege level, to allow for context switching between processes.
+Moreover, in a real processor it would be necessary to provide some mechanism to allow the processor to enter unlock mode **without jumping to
+the address in the Protmem Instruction Pointer** when operating in a higher privilege level, to allow for context switching between processes.
 This feature would also be needed to allow the system to recover if a process which uses Protmem exits without restoring unlock mode.
