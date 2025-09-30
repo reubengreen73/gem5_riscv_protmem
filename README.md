@@ -103,13 +103,13 @@ beginning correct protmem use...
 nonsecret is 17 96 101 27
 beginning incorrect protmem use...
 ```
-followed by a message from gem5 that a `protmem violation` occurred and a backtrace. For more information about what this demonstration
+followed by a message from gem5 that a `protmem violation` occurred, and a backtrace. For more information about what this demonstration
 program does, see the source file `workspace/demo-program/protmem-demo.c`.
 
 Once the initial full build has been done, you can experiment with Protmem by modifying the source file, then rebuild it and run it
 in gem5 by running the script `workspace/component-scripts/run-demo.sh`.
 
-Note that building and running this demonstration may take a long time. On the machine I am using (which is, admittedly, a rather old
+Note that the initial build of this demonstration may take a long time. On the machine I am using (which is, admittedly, a rather old
 and low-powered laptop) a full run took 6 hours. The `workspace` directory needed 18GB of space, and the generated Docker image took up
 1.9GB.
 

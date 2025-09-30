@@ -1,0 +1,360 @@
+diff --git a/src/arch/riscv/insts/mem.cc b/src/arch/riscv/insts/mem.cc
+index 8ebda7406d..cfd9f7f14f 100644
+--- a/src/arch/riscv/insts/mem.cc
++++ b/src/arch/riscv/insts/mem.cc
+@@ -65,5 +65,31 @@ Store::generateDisassembly(Addr pc, const loader::SymbolTable *symtab) const
+     return ss.str();
+ }
+ 
++/* checkMemoryAccessProtmem() checks if an access to the address EA is
++ * allowed with the Protmem data registers in state PMD1 and PMD2
++ */
++bool
++checkMemoryAccessProtmem(Addr EA, Addr PMD1, Addr PMD2)
++{
++  /* if we are in Protmem unlocked mode, the access is allowed */
++  if( PMD2 & (UINT64_C(1) << 63) ){
++    return true;
++  }
++
++  /* if we are in Protmem locked mode, the access is allowed if and
++   * only if EA does not lie in the range of memory addresses which
++   * start at the address in PMD1 and whose length is equal to the
++   * integer encoded in the leas significant 63 bits of the value in
++   * PMD2
++   */
++  Addr upper_bound = PMD1 + PMD2;
++  if( (EA >= PMD1) and (EA < upper_bound) ){
++    return false;
++  }
++  else {
++    return true;
++  }
++}
++
+ } // namespace RiscvISA
+ } // namespace gem5
+diff --git a/src/arch/riscv/insts/mem.hh b/src/arch/riscv/insts/mem.hh
+index 8e95c6b4e7..c471327385 100644
+--- a/src/arch/riscv/insts/mem.hh
++++ b/src/arch/riscv/insts/mem.hh
+@@ -71,6 +71,8 @@ class Store : public MemInst
+         Addr pc, const loader::SymbolTable *symtab) const override;
+ };
+ 
++bool checkMemoryAccessProtmem(Addr EA, Addr PMD1, Addr PMD2);
++
+ } // namespace RiscvISA
+ } // namespace gem5
+ 
+diff --git a/src/arch/riscv/isa/decoder.isa b/src/arch/riscv/isa/decoder.isa
+index 6235b34aee..f8f3e0d2e4 100644
+--- a/src/arch/riscv/isa/decoder.isa
++++ b/src/arch/riscv/isa/decoder.isa
+@@ -5942,6 +5942,36 @@ decode QUADRANT default Unknown::unknown() {
+             }}, IsIndirectControl, IsUncondControl);
+         }
+ 
++
++
++  // instructions for Protmem
++  0x1A: decode FUNCT3 {
++            0x1: Jump::enterprot({{
++                  ProtMemD2 = ProtMemD2 | (UINT64_C(1) << 63);
++                  Rd = NPC;
++                  NPC = ProtMemI;
++                }}, IsIndirectControl, IsUncondControl);
++            0x2: Jump::exitprot({{
++                  ProtMemD2 = ProtMemD2 & (~(UINT64_C(1) << 63));
++                  NPC = Rs1;
++                }}, IsIndirectControl, IsUncondControl);
++            0x3: ROp::setproti({{
++                  if(not (ProtMemD2 & (UINT64_C(1) << 63)) ){
++                    return std::make_shared<IllegalInstFault>("protmem violation",
++                                                              machInst);
++                  }
++                  ProtMemI = Rs1;
++                }});
++            0x4: ROp::setprotd({{
++                  if(not (ProtMemD2 & (UINT64_C(1) << 63)) ){
++                    return std::make_shared<IllegalInstFault>("protmem violation",
++                                                              machInst);
++                  }
++                  ProtMemD1 = Rs1;
++                  ProtMemD2 = ( Rs2 | (UINT64_C(1) << 63) );
++                }});
++        }
++
+         0x1b: JOp::jal({{
+             Rd = rvSext(NPC);
+             NPC = rvSext(PC + imm);
+diff --git a/src/arch/riscv/isa/formats/compressed.isa b/src/arch/riscv/isa/formats/compressed.isa
+index 94a770d835..8f28e005b7 100644
+--- a/src/arch/riscv/isa/formats/compressed.isa
++++ b/src/arch/riscv/isa/formats/compressed.isa
+@@ -97,18 +97,18 @@ def format CBOp(code, *opt_flags) {{
+     exec_output = BranchExecute.subst(iop)
+ }};
+ 
+-def format CompressedLoad(ldisp_code, memacc_code,
+-        ea_code, mem_flags=[], inst_flags=[]) {{
++def format CompressedLoad(ldisp_code, memacc_code, ea_code, mem_flags=[], inst_flags=[],
++        protmem_code={{PMD1=ProtMemD1;PMD2=ProtMemD2;}}) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, ldisp_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Load', exec_template_base='Load')
++        LoadStoreBase(name, Name, ldisp_code, ea_code, memacc_code, protmem_code,
++                      mem_flags, inst_flags, 'Load', exec_template_base='Load')
+ }};
+ 
+-def format CompressedStore(sdisp_code, memacc_code,
+-        ea_code, mem_flags=[], inst_flags=[]) {{
++def format CompressedStore(sdisp_code, memacc_code, ea_code, mem_flags=[], inst_flags=[],
++        protmem_code={{PMD1=ProtMemD1;PMD2=ProtMemD2;}}) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, sdisp_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Store', exec_template_base='Store')
++        LoadStoreBase(name, Name, sdisp_code, ea_code, memacc_code, protmem_code,
++                      mem_flags, inst_flags, 'Store', exec_template_base='Store')
+ }};
+ 
+ // Compressed basic instruction class declaration template.
+diff --git a/src/arch/riscv/isa/formats/mem.isa b/src/arch/riscv/isa/formats/mem.isa
+index 4f96a88c33..6a74feeae5 100644
+--- a/src/arch/riscv/isa/formats/mem.isa
++++ b/src/arch/riscv/isa/formats/mem.isa
+@@ -82,8 +82,8 @@ def getAlignFlag(iop):
+ 
+     return flag
+ 
+-def LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, base_class, postacc_code='', decode_template=BasicDecode,
++def LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, protmem_code,
++        mem_flags, inst_flags, base_class, postacc_code='', decode_template=BasicDecode,
+         exec_template_base=''):
+     # Make sure flags are in lists (convert to lists if not).
+     mem_flags = makeList(mem_flags)
+@@ -91,7 +91,8 @@ def LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+ 
+     iop = InstObjParams(name, Name, base_class,
+         {'offset_code': offset_code, 'ea_code': ea_code,
+-         'memacc_code': memacc_code, 'postacc_code': postacc_code },
++         'memacc_code': memacc_code, 'protmem_code': protmem_code,
++         'postacc_code': postacc_code },
+         inst_flags)
+ 
+     mem_flags = [ '(Request::%s)' % flag for flag in mem_flags ]
+@@ -125,11 +126,19 @@ def template LoadExecute {{
+     %(class_name)s::execute(
+         ExecContext *xc, trace::InstRecord *traceData) const
+     {
+-        Addr EA;
++        Addr EA,PMD1,PMD2;
+ 
+         %(op_decl)s;
+         %(op_rd)s;
+         %(ea_code)s;
++        %(protmem_code)s;
++
++        {
++          if(not checkMemoryAccessProtmem(EA,PMD1,PMD2)){
++            return std::make_shared<IllegalInstFault>(
++              "protmem violation", machInst);
++          }
++        }
+ 
+         {
+             Fault fault =
+@@ -151,11 +160,19 @@ def template LoadInitiateAcc {{
+     %(class_name)s::initiateAcc(ExecContext *xc,
+         trace::InstRecord *traceData) const
+     {
+-        Addr EA;
++        Addr EA,PMD1,PMD2;
+ 
+         %(op_src_decl)s;
+         %(op_rd)s;
+         %(ea_code)s;
++        %(protmem_code)s;
++
++        {
++          if(not checkMemoryAccessProtmem(EA,PMD1,PMD2)){
++            return std::make_shared<IllegalInstFault>(
++              "protmem violation", machInst);
++          }
++        }
+ 
+         return initiateMemRead(xc, traceData, EA, Mem, memAccessFlags);
+     }
+@@ -183,14 +200,22 @@ def template StoreExecute {{
+     %(class_name)s::execute(ExecContext *xc,
+         trace::InstRecord *traceData) const
+     {
+-        Addr EA;
++        Addr EA,PMD1,PMD2;
+ 
+         %(op_decl)s;
+         %(op_rd)s;
+         %(ea_code)s;
++        %(protmem_code)s;
+ 
+         %(memacc_code)s;
+ 
++        {
++          if(not checkMemoryAccessProtmem(EA,PMD1,PMD2)){
++            return std::make_shared<IllegalInstFault>(
++              "protmem violation", machInst);
++          }
++        }
++
+         {
+             Fault fault =
+                 writeMemAtomicLE(xc, traceData, Mem, EA, memAccessFlags,
+@@ -211,11 +236,19 @@ def template StoreInitiateAcc {{
+     %(class_name)s::initiateAcc(ExecContext *xc,
+         trace::InstRecord *traceData) const
+     {
+-        Addr EA;
++        Addr EA,PMD1,PMD2;
+ 
+         %(op_decl)s;
+         %(op_rd)s;
+         %(ea_code)s;
++        %(protmem_code)s;
++
++        {
++          if(not checkMemoryAccessProtmem(EA,PMD1,PMD2)){
++            return std::make_shared<IllegalInstFault>(
++              "protmem violation", machInst);
++          }
++        }
+ 
+         %(memacc_code)s;
+ 
+@@ -546,42 +579,44 @@ def template HyperStoreCompleteAcc {{
+ 
+ def format Load(memacc_code, ea_code = {{EA = rvSext(Rs1 + offset);}},
+         offset_code={{offset = sext<12>(IMM12);}},
++        protmem_code = {{PMD1=ProtMemD1;PMD2=ProtMemD2;}},
+         mem_flags=[], inst_flags=[]) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Load', exec_template_base='Load')
++        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, protmem_code,
++        mem_flags, inst_flags, 'Load', exec_template_base='Load')
+ }};
+ 
+ def format Store(memacc_code, ea_code={{EA = rvSext(Rs1 + offset);}},
+         offset_code={{offset = sext<12>(IMM5 | (IMM7 << 5));}},
++        protmem_code = {{PMD1=ProtMemD1;PMD2=ProtMemD2;}},
+         mem_flags=[], inst_flags=[]) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Store', exec_template_base='Store')
++        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, protmem_code,
++        mem_flags, inst_flags, 'Store', exec_template_base='Store')
+ }};
+ 
+ def format CBMOp(memacc_code, ea_code={{EA = rvSext(Rs1);}},
+-        offset_code={{;}}, mem_flags=[], inst_flags=[]) {{
++        offset_code={{;}}, protmem_code={{;}}, mem_flags=[], inst_flags=[]) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Store', exec_template_base='CacheBlockBasedStore')
++        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, protmem_code,
++        mem_flags, inst_flags, 'Store', exec_template_base='CacheBlockBasedStore')
+ }};
+ 
+ 
+ // H-extension formats
+ 
+ def format HyperLoad(memacc_code, ea_code = {{EA = rvZext(Rs1 + offset);}},
+-        offset_code={{offset = 0;}},
++        offset_code={{offset = 0;}}, protmem_code={{;}},
+         mem_flags=[], inst_flags=[]) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Load', exec_template_base='HyperLoad')
++        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, protmem_code,
++        mem_flags, inst_flags, 'Load', exec_template_base='HyperLoad')
+ }};
+ 
+ def format HyperStore(memacc_code, ea_code={{EA = rvZext(Rs1 + offset);}},
+-        offset_code={{offset = 0;}},
++        offset_code={{offset = 0;}}, protmem_code={{;}},
+         mem_flags=[], inst_flags=[]) {{
+     (header_output, decoder_output, decode_block, exec_output) = \
+-        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, mem_flags,
+-        inst_flags, 'Store', exec_template_base='HyperStore')
++        LoadStoreBase(name, Name, offset_code, ea_code, memacc_code, protmem_code,
++        mem_flags, inst_flags, 'Store', exec_template_base='HyperStore')
+ }};
+diff --git a/src/arch/riscv/isa/operands.isa b/src/arch/riscv/isa/operands.isa
+index 8700668b14..23c3fa3490 100644
+--- a/src/arch/riscv/isa/operands.isa
++++ b/src/arch/riscv/isa/operands.isa
+@@ -79,6 +79,10 @@ def operands {{
+     'CmPushReg': IntReg('ud', 'push_reg', 'IsInteger', 3),
+     'CmPopReg': IntReg('ud', 'pop_reg', 'IsInteger', 1),
+ 
++    'ProtMemI' : IntReg('ud', 'ProtMemInsnReg', 'IsInteger', 5),
++    'ProtMemD1' : IntReg('ud', 'ProtMemDataReg1', 'IsInteger', 5),
++    'ProtMemD2' : IntReg('ud', 'ProtMemDataReg2', 'IsInteger', 5),
++
+     'Fd': FloatRegOp('df', 'FD', 'IsFloating', 1),
+     'Fd_bits': FloatRegOp('ud', 'FD', 'IsFloating', 1),
+     'Fs1': FloatRegOp('df', 'FS1', 'IsFloating', 2),
+diff --git a/src/arch/riscv/process.cc b/src/arch/riscv/process.cc
+index 0a3d6a6c35..9958566a25 100644
+--- a/src/arch/riscv/process.cc
++++ b/src/arch/riscv/process.cc
+@@ -110,6 +110,17 @@ RiscvProcess64::initState()
+             "RISC V SE mode can't run without supervisor and user "
+             "privilege modes.");
+     }
++
++    /* Initialise the Protmem register ProtMemDataReg2, which holds two
++     * pieces of data: the most significant bit is a flag which controls
++     * whether we are in Protmem locked mode or unlocked mode, while the
++     * remaining bits control the length of the protected memory segment.
++     * We initialise this register so that we are in unlocked mode and the
++     * length of the segment is 0 (this essentially switches off the
++     * Protmem feature).
++     */
++    ThreadContext *tc = system->threads[contextIds[0]];
++    tc->setReg(ProtMemDataReg2, (UINT64_C(1)<<63));
+ }
+ 
+ void
+diff --git a/src/arch/riscv/regs/int.hh b/src/arch/riscv/regs/int.hh
+index dc7e37cdbe..375db4d512 100644
+--- a/src/arch/riscv/regs/int.hh
++++ b/src/arch/riscv/regs/int.hh
+@@ -71,6 +71,7 @@ enum : RegIndex
+     _S4Idx,   _S5Idx, _S6Idx,  _S7Idx,
+     _S8Idx,   _S9Idx, _S10Idx, _S11Idx,
+     _T3Idx,   _T4Idx, _T5Idx,  _T6Idx,
++    _ProtMemI, _ProtMemD1, _ProtMemD2,
+ 
+     NumArchRegs,
+ 
+@@ -120,6 +121,9 @@ inline constexpr RegId
+     T4 = intRegClass[_T4Idx],
+     T5 = intRegClass[_T5Idx],
+     T6 = intRegClass[_T6Idx],
++    ProtMemI = intRegClass[_ProtMemI],
++    ProtMemD1 = intRegClass[_ProtMemD1],
++    ProtMemD2 = intRegClass[_ProtMemD2],
+     Ureg0 = intRegClass[_Ureg0Idx];
+ 
+ const std::vector<std::string> RegNames = {
+@@ -141,6 +145,9 @@ inline constexpr auto
+     &StackPointerReg = int_reg::Sp,
+     &ThreadPointerReg = int_reg::Tp,
+     &ReturnValueReg = int_reg::A0,
++    &ProtMemInsnReg = int_reg::ProtMemI,
++    &ProtMemDataReg1 = int_reg::ProtMemD1,
++    &ProtMemDataReg2 = int_reg::ProtMemD2,
+     &AMOTempReg = int_reg::Ureg0,
+     &SyscallNumReg = int_reg::A7;
+ 

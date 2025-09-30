@@ -1,0 +1,104 @@
+diff --git a/bfd/elfxx-riscv.c b/bfd/elfxx-riscv.c
+index 12000322e32..2c34c7a90f2 100644
+--- a/bfd/elfxx-riscv.c
++++ b/bfd/elfxx-riscv.c
+@@ -1636,6 +1636,7 @@ static struct riscv_supported_ext riscv_supported_vendor_x_ext[] =
+   {"xmipscmov",		ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
+   {"xmipsexectl",	ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
+   {"xmipslsp",		ISA_SPEC_CLASS_DRAFT,	1, 0, 0 },
++  {"xprotmem",          ISA_SPEC_CLASS_DRAFT,   1, 0, 0 }, // added for PROTMEM
+   {NULL, 0, 0, 0, 0}
+ };
+ 
+@@ -3054,6 +3055,11 @@ riscv_multi_subset_supports (riscv_parse_subset_t *rps,
+       return riscv_subset_supports (rps, "xmipsexectl");
+     case INSN_CLASS_XMIPSLSP:
+       return riscv_subset_supports (rps, "xmipslsp");
++
++    /* added for PROTMEM */
++    case INSN_CLASS_XPROTMEM:
++      return riscv_subset_supports (rps, "xprotmem");
++
+     default:
+       rps->error_handler
+         (_("internal: unreachable INSN_CLASS_*"));
+@@ -3338,6 +3344,11 @@ riscv_multi_subset_supports_ext (riscv_parse_subset_t *rps,
+       return "xtheadzvamo";
+     case INSN_CLASS_XSFCEASE:
+       return "xsfcease";
++
++    /* added for PROTMEM */
++    case INSN_CLASS_XPROTMEM:
++      return "xprotmem";
++
+     default:
+       rps->error_handler
+         (_("internal: unreachable INSN_CLASS_*"));
+diff --git a/include/opcode/riscv-opc.h b/include/opcode/riscv-opc.h
+index 1c649628390..4362d51676d 100644
+--- a/include/opcode/riscv-opc.h
++++ b/include/opcode/riscv-opc.h
+@@ -3823,6 +3823,17 @@
+ #define MASK_MIPS_PAUSE  0xffffffff
+ #define MATCH_MIPS_PREF 0x0000000b
+ #define MASK_MIPS_PREF 0xe000707f
++
++/* added for PROTMEM */
++#define MATCH_ENTERPROT 0x106b
++#define MASK_ENTERPROT 0xfffff07f
++#define MATCH_EXITPROT 0x206b
++#define MASK_EXITPROT 0xfff07fff
++#define MATCH_SETPROTI 0x306b
++#define MASK_SETPROTI 0xfff07fff
++#define MATCH_SETPROTD 0x406b
++#define MASK_SETPROTD 0xfe007fff
++
+ /* Unprivileged Counter/Timers CSR addresses.  */
+ #define CSR_CYCLE 0xc00
+ #define CSR_TIME 0xc01
+@@ -4978,6 +4989,13 @@ DECLARE_INSN(mips_ehb, MATCH_MIPS_EHB, MASK_MIPS_EHB)
+ DECLARE_INSN(mips_ihb, MATCH_MIPS_IHB, MASK_MIPS_IHB)
+ DECLARE_INSN(mips_pause, MATCH_MIPS_PAUSE, MASK_MIPS_PAUSE)
+ DECLARE_INSN(mips_pref, MATCH_MIPS_PREF, MASK_MIPS_PREF)
++
++/* added for PROTMEM */
++DECLARE_INSN(enterprot, MATCH_ENTERPROT, MASK_ENTERPROT)
++DECLARE_INSN(exitprot, MATCH_EXITPROT, MASK_EXITPROT)
++DECLARE_INSN(setproti, MATCH_SETPROTI, MASK_SETPROTI)
++DECLARE_INSN(setprotd, MATCH_SETPROTD, MASK_SETPROTD)
++
+ #endif /* DECLARE_INSN */
+ #ifdef DECLARE_CSR
+ /* Unprivileged Counter/Timers CSRs.  */
+diff --git a/include/opcode/riscv.h b/include/opcode/riscv.h
+index 858fcce6871..20a7c1cf3ba 100644
+--- a/include/opcode/riscv.h
++++ b/include/opcode/riscv.h
+@@ -606,6 +606,10 @@ enum riscv_insn_class
+   INSN_CLASS_XMIPSCMOV,
+   INSN_CLASS_XMIPSEXECTL,
+   INSN_CLASS_XMIPSLSP,
++
++  /* added for PROTMEM */
++  INSN_CLASS_XPROTMEM,
++
+ };
+ 
+ /* This structure holds information for a particular instruction.  */
+diff --git a/opcodes/riscv-opc.c b/opcodes/riscv-opc.c
+index 56ef62a622f..1c474ee8b1b 100644
+--- a/opcodes/riscv-opc.c
++++ b/opcodes/riscv-opc.c
+@@ -3587,6 +3587,12 @@ const struct riscv_opcode riscv_opcodes[] =
+ {"mips.sdp", 0, INSN_CLASS_XMIPSLSP, "t,r,Xm^(s)", MATCH_MIPS_SDP, MASK_MIPS_SDP, match_opcode, 0 },
+ {"mips.swp", 0, INSN_CLASS_XMIPSLSP, "t,r,Xm&(s)", MATCH_MIPS_SWP, MASK_MIPS_SWP, match_opcode, 0 },
+ 
++/* added for PROTMEM */
++{"enterprot", 0, INSN_CLASS_XPROTMEM, "d", MATCH_ENTERPROT, MASK_ENTERPROT, match_opcode, 0},
++{"exitprot", 0, INSN_CLASS_XPROTMEM, "s", MATCH_EXITPROT, MASK_EXITPROT, match_opcode, 0},
++{"setproti", 0, INSN_CLASS_XPROTMEM, "s", MATCH_SETPROTI, MASK_SETPROTI, match_opcode, 0},
++{"setprotd", 0, INSN_CLASS_XPROTMEM, "s,t", MATCH_SETPROTD, MASK_SETPROTD, match_opcode, 0},
++
+ /* Terminate the list.  */
+ {0, 0, INSN_CLASS_NONE, 0, 0, 0, 0, 0}
+ };

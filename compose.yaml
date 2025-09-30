@@ -1,0 +1,8 @@
+services:
+  gem5-protmem-demo:
+    build: .
+    volumes:
+      - ./workspace:/root/workspace
+
+
+
