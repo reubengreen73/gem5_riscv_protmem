@@ -9,8 +9,8 @@ The essential idea of Protmem is to augment RISCV to allow a process to create a
 PMS will cause a processor fault. The PMS could be used, for example, to hold a cryptographic key, with the
 designated code path allowed to access the PMS being an encryption/decryption routine. Protmem would then
 prevent a vulnerability (such as a buffer overread) in the program's code (outside the designated code path)
-from exposing the cryptographic key to an attacker. This could prevent vulnerabilities like
-[Heartbleed](https://www.heartbleed.com/) from being exploited.
+from exposing the cryptographic key to an attacker. This could vastly reduce the scope for exploitation
+of vulnerabilities, preventing vulnerabilities like [Heartbleed](https://www.heartbleed.com/) from being exploited.
 
 The code in this repository contains a patch for the [gem5 simulator](https://github.com/gem5/gem5) adding
 Protmem support, a patch for the [GNU RISCV toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
