@@ -1,16 +1,21 @@
 # Protmem, a simple RISCV extension
-This repository contains code for a simple extension to the RISCV architecture called Protmem,
+This repository contains code for a simple extension to the RISCV architecture called Protmem (**Prot**ected **mem**ory),
 implemented as a modification to the gem5 simulator and the GNU RISCV toolchain. I have created Protmem
 as a demonstration of my ability to work on gem5, rather than as a serious suggestion for a RISCV extension.
 
 ## Overview of Protmem
 The essential idea of Protmem is to augment RISCV to allow a process to create a **protected memory segment**
 (PMS) in its address space, which may only be accessed via one designated code path. Any other access to the
-PMS will cause a processor fault. The PMS could be used, for example, to hold a cryptographic key used by a
-program, with the designated code path allowed to access the PMS being an encryption/decryption routine. Protmem
-would then prevent any vulnerability (such as a buffer overread) in the program's code outside the designated
-code path from exposing the cryptographic key to an attacker (this could prevent vulnerabilities like
-[Heartbleed](https://www.heartbleed.com/) from being exploited).
+PMS will cause a processor fault. The PMS could be used, for example, to hold a cryptographic key, with the
+designated code path allowed to access the PMS being an encryption/decryption routine. Protmem would then
+prevent a vulnerability (such as a buffer overread) in the program's code (outside the designated code path)
+from exposing the cryptographic key to an attacker. This could prevent vulnerabilities like
+[Heartbleed](https://www.heartbleed.com/) from being exploited.
+
+The code in this repository contains a patch for the [gem5 simulator](https://github.com/gem5/gem5) adding
+Protmem support, a patch for the [GNU RISCV toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
+to add support for Protmem instructions in RISCV assembly, and a sample program in C with inline assembly
+demonstrating Protmem.
 
 ## Design of Protmem
 Protmem augments 64-bit RISCV by adding 3 new 64-bit registers and four new instructions. The registers are as follows
@@ -42,11 +47,8 @@ and then use `exitprot` to enter lock mode before commencing its main work.
 Note that the three Protmem registers are not directly accessible via the instruction set architecture. They can only be used and modified
 implicitly via the above instructions.
 
-Protmem does not include any mechanism to protect the code pointed to by the Protmem Instruction Pointer from modification, which represents
-a potential hole in Protmem's security. However, this register will normally point into the text segment of the binary, and there are already
-mechanisms to protect text segments from being modified. In particular, many environments make text segments read-only. It would of course
-be possible for Protmem to directly protect a section of memory beginning at the address in the Protmem Instruction Pointer, but I have not
-done this.
+Note that Protmem does not require any kind of processor context change or transition to a different privilege level via an interrupt,
+which could make changes between lock and unlock mode very efficient in a real processor.
 
 ## Using Protmem
 The intended way to use Protmem is as follows. A program starts up in unlock mode. It then sets up a protected memory segment (either on the
@@ -65,6 +67,12 @@ designated registers to hold the address of the source data, the address to writ
 the return address, and a value to designate which operation to perform. The program would then enter lock mode, and proceed to do its work.
 Whenever the program has data to encrypt or decrypt, it would set up the registers according to the convention, and then jump to the
 encryption/decryption routine using `enterprot`. The routine would perform the requested operation before returning using `exitprot`.
+
+Note that it will be necessary to have a mechanism to permanently exit from lock mode via the designated code path, to allow orderly exit
+from the program without Protmem protections getting in the way. Returning to the example of protecting a cryptographic key, the
+encryption/decryption routine could recognise a third operation request besides encryption and decryption, which would cause the routine
+to zero out the cryptographic key and set the Protmem Data 2 register to give the PMS a length of 0, before jumping to the return address
+via a normal jump instruction to preserve unlock mode.
 
 For an example of a simple usage of Protmem, see the file `workspace/demo-program/protmem-demo.c`.
 
@@ -87,3 +95,17 @@ and run `./full-demo.sh`. This will run each of the scripts in the `component sc
 built, then gem5, and finally the demonstration program `workspace/demo-program/protmem-demo.c` will be compiled and run in gem5.
 
 HERE
+
+## Limitations of Protmem
+As mentioned above, Protmem is not a fully worked out design, but rather just a demonstration of a concept. As such, the system implemented
+here has some limitations.
+
+Protmem does not include any mechanism to protect the code pointed to by the Protmem Instruction Pointer from modification, which represents
+a potential hole in Protmem's security. However, this register will normally point into the text segment of the binary, and there are already
+mechanisms to protect text segments from being modified. In particular, many environments make text segments read-only. It would of course
+be possible for Protmem to directly protect a section of memory beginning at the address in the Protmem Instruction Pointer, but I have not
+done this.
+
+Moreover, in a real processor it would be necessary to provide some mechanism to allow the processor to enter unlock mode *without jumping to
+the address in the Protmem Instruction Pointer* when operating in a higher privilege level, to allow for context switching between processes.
+This feature would also be needed to allow the system to recover if a process which uses Protmem exits without restoring unlock mode.
