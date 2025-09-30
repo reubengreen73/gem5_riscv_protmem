@@ -10,7 +10,7 @@ PMS will cause a processor fault. The PMS could be used, for example, to hold a 
 designated code path allowed to access the PMS being an encryption/decryption routine. Protmem would then
 prevent a vulnerability (such as a buffer overread) in the program's code (outside the designated code path)
 from exposing the cryptographic key to an attacker. This could vastly reduce the scope for exploitation
-of vulnerabilities, preventing vulnerabilities like [Heartbleed](https://www.heartbleed.com/) from being exploited.
+of vulnerabilities like [Heartbleed](https://www.heartbleed.com/).
 
 The code in this repository contains a patch for the [gem5 simulator](https://github.com/gem5/gem5) adding
 Protmem support, a patch for the [GNU RISCV toolchain](https://github.com/riscv-collab/riscv-gnu-toolchain)
@@ -44,11 +44,11 @@ attempting to do them will cause a processor fault.
 The processor is initialised in unlock mode. A program can then set up the PMS and the code for the Protmem Instruction Pointer to point to,
 and then use `exitprot` to enter lock mode before commencing its main work.
 
-Note that the three Protmem registers are not directly accessible via the instruction set architecture. They can only be used and modified
+The three Protmem registers are not directly accessible via the instruction set architecture. They can only be used and modified
 implicitly via the above instructions.
 
-Note that Protmem does not require any kind of processor context change or transition to a different privilege level via an interrupt,
-which could make changes between lock and unlock mode very efficient in a real processor.
+Note that moving between Protmem lock mode and Protmem unlock mode does not require any kind of processor context change or transition
+to a different privilege level via an interrupt. This could make these transitions very efficient in a real processor.
 
 ## Using Protmem
 The intended way to use Protmem is as follows. A program starts up in unlock mode. It then sets up a protected memory segment (either on the
@@ -82,7 +82,7 @@ The files in this repository contain patches for gem5 itself as well as for the 
 us to easily create binaries which use Protmem, and then run them on the modified gem5 in syscall emulation mode. There is also a demonstration
 program in C with inline assembly that shows how to use the Protmem instructions.
 
-For the user's convenience, this repository also contains files which allows everything to be easily built and run in a Docker container.
+For the user's convenience, this repository also contains scripts which allow everything to be easily built and run in a Docker container.
 The Dockerfile sets up the container and installs all the necessary packages. The container mounts the `workspace` directory as a volume,
 and all building is done in this directory, allowing easy access to the patched code. Once inside the container, running the scripts
 provided will download, patch, and build both gem5 and the GNU RISCV toolchain, and then compile the Protmem demonstration program and
@@ -91,16 +91,18 @@ run the resulting binary in gem5.
 To build and run everything, you can do the following. First, build and enter the container by running
 ```docker compose run gem5-protmem-demo```
 from the root of this repository. Then, once you are at the prompt inside this container, `cd` into the `workspace` directory
-and run `./full-demo.sh`. This will run each of the scripts in the `component scripts` subdirectory in order: first the toolchain will be
+and run `./full-demo.sh`. This will run each of the scripts in the `component-scripts` subdirectory in order: first the toolchain will be
 built, then gem5, and finally the demonstration program `workspace/demo-program/protmem-demo.c` will be compiled and run in gem5.
 
 A run of `full-demo.sh` will end by running the demonstration program in gem5. The output from this should be as follows.
-```doing setup...
+```
+doing setup...
    ...done
 beginning correct protmem use...
    ...done
 nonsecret is 17 96 101 27
-beginning incorrect protmem use...```
+beginning incorrect protmem use...
+```
 followed by a message from gem5 that a `protmem violation` occurred and a backtrace. For more information about what this demonstration
 program does, see the source file `workspace/demo-program/protmem-demo.c`.
 
